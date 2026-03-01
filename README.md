@@ -9,6 +9,7 @@ OpenCode-style tool rendering for the Pi coding agent.
 ## Features
 
 - Compact rendering for `read`, `grep`, `find`, `ls`, `bash`, `edit`, and `write`
+- Optional per-tool override ownership toggles (`read`, `grep`, `find`, `ls`, `bash`, `edit`, `write`) for extension compatibility
 - Presets for output verbosity: `opencode`, `balanced`, `verbose`
 - Interactive settings modal via `/tool-display`
 - Command-based controls (`show`, `reset`, `preset ...`)
@@ -73,7 +74,36 @@ Runtime config is stored at:
 
 A starter file is included as `config/config.example.json`.
 
+Important compatibility config:
+
+```json
+{
+  "registerToolOverrides": {
+    "read": true,
+    "grep": true,
+    "find": true,
+    "ls": true,
+    "bash": true,
+    "edit": true,
+    "write": true
+  }
+}
+```
+
+- Each flag controls whether `pi-tool-display` registers that built-in tool override.
+- Set any tool to `false` to leave ownership to another extension.
+- Changing ownership values requires `/reload` to apply.
+- Legacy `registerReadToolOverride` is still accepted for backward compatibility and maps to `registerToolOverrides.read`.
+
 Values are normalized and clamped on load/save to avoid invalid settings.
+
+## Troubleshooting
+
+If another extension owns one of these tools (`read`, `grep`, `find`, `ls`, `bash`, `edit`, `write`) and you see conflicts:
+
+1. Set the corresponding `registerToolOverrides.<tool>` value to `false` in your config.
+2. Run `/reload` in Pi.
+3. Verify with `/tool-display show` that `owners={...}` reflects the expected `off` values.
 
 ## Development
 

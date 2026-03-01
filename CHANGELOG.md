@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-03-02
+
+### Added
+- Added per-tool ownership config via `registerToolOverrides` for `read`, `grep`, `find`, `ls`, `bash`, `edit`, and `write` so users can avoid tool ownership conflicts with other extensions.
+- Added settings modal toggles for built-in tool ownership and `/reload` guidance when ownership changes.
+- Added backward-compatible config migration from legacy `registerReadToolOverride` to `registerToolOverrides.read`.
+
+### Changed
+- Built-in tool override registration is now conditional per tool based on ownership settings.
+- Updated README configuration/troubleshooting docs for multi-tool extension compatibility.
+
 ## [0.1.2] - 2026-03-01
 
 ### Fixed

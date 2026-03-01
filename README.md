@@ -4,7 +4,7 @@ OpenCode-style tool rendering for the Pi coding agent.
 
 `pi-tool-display` overrides built-in tool renderers so tool calls/results stay compact by default, with optional previews and richer diffs when you need detail.
 
-![Screenshot](pi-tool-display.png)
+![Screenshot](assets/pi-tool-display.png)
 
 ## Features
 
@@ -71,7 +71,7 @@ Runtime config is stored at:
 ~/.pi/agent/extensions/pi-tool-display/config.json
 ```
 
-A starter file is included as `config.example.json`.
+A starter file is included as `config/config.example.json`.
 
 Values are normalized and clamped on load/save to avoid invalid settings.
 
@@ -86,15 +86,18 @@ npm run check
 
 ## Project Layout
 
-- `index.ts` - extension bootstrap and registration
-- `tool-overrides.ts` - built-in and MCP renderer overrides
-- `diff-renderer.ts` - edit/write diff rendering engine
-- `config-modal.ts` - `/tool-display` settings UI
-- `config-store.ts` - config load/save and normalization
-- `presets.ts` - preset definitions and matching
-- `render-utils.ts` - shared rendering helpers
-- `user-message-box-native.ts` - user message border patch
-- `zellij-modal.ts` - vendored modal UI primitives used by settings UI
+- `index.ts` - root extension entrypoint (kept for Pi auto-discovery)
+- `src/index.ts` - extension bootstrap and registration
+- `src/tool-overrides.ts` - built-in and MCP renderer overrides
+- `src/diff-renderer.ts` - edit/write diff rendering engine
+- `src/config-modal.ts` - `/tool-display` settings UI
+- `src/config-store.ts` - config load/save and normalization
+- `src/presets.ts` - preset definitions and matching
+- `src/render-utils.ts` - shared rendering helpers
+- `src/user-message-box-native.ts` - user message border patch
+- `src/zellij-modal.ts` - vendored modal UI primitives used by settings UI
+- `config/config.example.json` - starter config template
+- `assets/pi-tool-display.png` - README screenshot asset
 
 ## License
 

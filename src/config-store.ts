@@ -104,6 +104,10 @@ export function normalizeToolDisplayConfig(raw: unknown): ToolDisplayConfig {
 			source.registerToolOverrides,
 			source.registerReadToolOverride,
 		),
+		enableNativeUserMessageBox: toBoolean(
+			source.enableNativeUserMessageBox,
+			DEFAULT_TOOL_DISPLAY_CONFIG.enableNativeUserMessageBox,
+		),
 		readOutputMode: toReadOutputMode(source.readOutputMode),
 		searchOutputMode: toSearchOutputMode(source.searchOutputMode),
 		mcpOutputMode: toMcpOutputMode(source.mcpOutputMode),

@@ -4,6 +4,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { sanitizeAnsiForThemedOutput } from "./render-utils.js";
+import type { ToolDisplayConfig } from "./types.js";
 
 interface ThemeLike {
   fg(color: string, text: string): string;
@@ -154,7 +155,10 @@ function wrapContentLine(
   return colorUserBackground(theme, row);
 }
 
-function patchUserMessageRender(getTheme: () => ThemeLike | undefined): void {
+function patchUserMessageRender(
+  getTheme: () => ThemeLike | undefined,
+  isEnabled: () => boolean,
+): void {
   const prototype =
     UserMessageComponent.prototype as unknown as UserMessagePrototype;
   if (typeof prototype.render !== "function") {
@@ -178,6 +182,10 @@ function patchUserMessageRender(getTheme: () => ThemeLike | undefined): void {
     }
 
     const safeWidth = Math.max(0, Math.floor(width));
+    if (!isEnabled()) {
+      return originalRender.call(this, safeWidth);
+    }
+
     if (safeWidth < MIN_BORDER_WIDTH) {
       return originalRender.call(this, safeWidth);
     }
@@ -201,24 +209,28 @@ function patchUserMessageRender(getTheme: () => ThemeLike | undefined): void {
   prototype.__piUserMessageNativePatched = true;
 }
 
-export default function registerNativeUserMessageBox(pi: ExtensionAPI): void {
+export default function registerNativeUserMessageBox(
+  pi: ExtensionAPI,
+  getConfig: () => ToolDisplayConfig,
+): void {
   let activeTheme: ThemeLike | undefined;
 
   const getTheme = (): ThemeLike | undefined => activeTheme;
+  const isEnabled = (): boolean => getConfig().enableNativeUserMessageBox;
 
-  patchUserMessageRender(getTheme);
+  patchUserMessageRender(getTheme, isEnabled);
 
   pi.on("before_agent_start", async () => {
-    patchUserMessageRender(getTheme);
+    patchUserMessageRender(getTheme, isEnabled);
   });
 
   pi.on("session_start", async (_event, ctx) => {
     activeTheme = ctx.ui.theme as unknown as ThemeLike;
-    patchUserMessageRender(getTheme);
+    patchUserMessageRender(getTheme, isEnabled);
   });
 
   pi.on("session_switch", async (_event, ctx) => {
     activeTheme = ctx.ui.theme as unknown as ThemeLike;
-    patchUserMessageRender(getTheme);
+    patchUserMessageRender(getTheme, isEnabled);
   });
 }

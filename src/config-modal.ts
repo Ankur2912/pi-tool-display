@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import type { SettingItem } from "@mariozechner/pi-tui";
 import { ZellijModal, ZellijSettingsModal } from "./zellij-modal.js";
+import type { ToolDisplayCapabilities } from "./capabilities.js";
 import {
 	detectToolDisplayPreset,
 	getToolDisplayPresetConfig,
@@ -17,6 +18,7 @@ import {
 interface ToolDisplayConfigController {
 	getConfig(): ToolDisplayConfig;
 	setConfig(next: ToolDisplayConfig, ctx: ExtensionCommandContext): void;
+	getCapabilities(): ToolDisplayCapabilities;
 }
 
 interface SettingValueSyncTarget {
@@ -49,9 +51,35 @@ function toolOwnershipSummary(config: ToolDisplayConfig): string {
 	return `read:${toOnOff(overrides.read)},grep:${toOnOff(overrides.grep)},find:${toOnOff(overrides.find)},ls:${toOnOff(overrides.ls)},bash:${toOnOff(overrides.bash)},edit:${toOnOff(overrides.edit)},write:${toOnOff(overrides.write)}`;
 }
 
-function summarizeConfig(config: ToolDisplayConfig): string {
+function summarizeConfig(config: ToolDisplayConfig, capabilities: ToolDisplayCapabilities): string {
 	const preset = detectToolDisplayPreset(config);
-	return `preset=${preset}, owners={${toolOwnershipSummary(config)}}, read=${config.readOutputMode}, search=${config.searchOutputMode}, mcp=${config.mcpOutputMode}, preview=${config.previewLines}, expandedMax=${config.expandedPreviewMaxLines}, bash=${config.bashCollapsedLines}, diff=${config.diffViewMode}@${config.diffSplitMinWidth}, diffLines=${config.diffCollapsedLines}, diffWrap=${toOnOff(config.diffWordWrap)}, rtkHints=${toOnOff(config.showRtkCompactionHints)}`;
+	const parts = [
+		`preset=${preset}`,
+		`owners={${toolOwnershipSummary(config)}}`,
+		`userBox=${toOnOff(config.enableNativeUserMessageBox)}`,
+		`read=${config.readOutputMode}`,
+		`search=${config.searchOutputMode}`,
+		`preview=${config.previewLines}`,
+		`expandedMax=${config.expandedPreviewMaxLines}`,
+		`bash=${config.bashCollapsedLines}`,
+		`diff=${config.diffViewMode}@${config.diffSplitMinWidth}`,
+		`diffLines=${config.diffCollapsedLines}`,
+		`diffWrap=${toOnOff(config.diffWordWrap)}`,
+	];
+
+	if (capabilities.hasMcpTooling) {
+		parts.push(`mcp=${config.mcpOutputMode}`);
+	} else {
+		parts.push("mcp=auto-hidden");
+	}
+
+	if (capabilities.hasRtkOptimizer) {
+		parts.push(`rtkHints=${toOnOff(config.showRtkCompactionHints)}`);
+	} else {
+		parts.push("rtkHints=auto-off");
+	}
+
+	return parts.join(", ");
 }
 
 function parseNumber(value: string, fallback: number): number {
@@ -113,7 +141,34 @@ function buildToolOwnershipSettings(config: ToolDisplayConfig): SettingItem[] {
 	];
 }
 
-function buildSettingItems(config: ToolDisplayConfig): SettingItem[] {
+function buildSettingItems(
+	config: ToolDisplayConfig,
+	capabilities: ToolDisplayCapabilities,
+): SettingItem[] {
+	const mcpSettings: SettingItem[] = capabilities.hasMcpTooling
+		? [
+				{
+					id: "mcpOutputMode",
+					label: "MCP tool output",
+					description: "hidden = call only, summary = line count, preview = show lines",
+					currentValue: config.mcpOutputMode,
+					values: ["hidden", "summary", "preview"],
+				},
+			]
+		: [];
+
+	const rtkSettings: SettingItem[] = capabilities.hasRtkOptimizer
+		? [
+				{
+					id: "showRtkCompactionHints",
+					label: "Show RTK compaction hints",
+					description: "Shows RTK compaction labels (including summary suffix text)",
+					currentValue: toOnOff(config.showRtkCompactionHints),
+					values: ["on", "off"],
+				},
+			]
+		: [];
+
 	return [
 		{
 			id: "preset",
@@ -121,6 +176,13 @@ function buildSettingItems(config: ToolDisplayConfig): SettingItem[] {
 			description: "opencode = strict inline-only, balanced = compact summaries, verbose = line previews",
 			currentValue: detectToolDisplayPreset(config),
 			values: [...TOOL_DISPLAY_PRESETS],
+		},
+		{
+			id: "enableNativeUserMessageBox",
+			label: "Native user message box",
+			description: "on = render user prompts in bordered box, off = use default Pi user message rendering",
+			currentValue: toOnOff(config.enableNativeUserMessageBox),
+			values: ["on", "off"],
 		},
 		...buildToolOwnershipSettings(config),
 		{
@@ -137,13 +199,7 @@ function buildSettingItems(config: ToolDisplayConfig): SettingItem[] {
 			currentValue: config.searchOutputMode,
 			values: ["hidden", "count", "preview"],
 		},
-		{
-			id: "mcpOutputMode",
-			label: "MCP tool output",
-			description: "hidden = call only, summary = line count, preview = show lines",
-			currentValue: config.mcpOutputMode,
-			values: ["hidden", "summary", "preview"],
-		},
+		...mcpSettings,
 		{
 			id: "previewLines",
 			label: "Preview lines (read/search/MCP)",
@@ -200,13 +256,7 @@ function buildSettingItems(config: ToolDisplayConfig): SettingItem[] {
 			currentValue: toOnOff(config.showTruncationHints),
 			values: ["on", "off"],
 		},
-		{
-			id: "showRtkCompactionHints",
-			label: "Show RTK compaction hints",
-			description: "Shows RTK compaction labels (including summary suffix text)",
-			currentValue: toOnOff(config.showRtkCompactionHints),
-			values: ["on", "off"],
-		},
+		...rtkSettings,
 	];
 }
 
@@ -223,7 +273,11 @@ function parseToolOverrideSettingId(id: string): BuiltInToolOverrideName | undef
 	return undefined;
 }
 
-function withToolOverride(config: ToolDisplayConfig, toolName: BuiltInToolOverrideName, enabled: boolean): ToolDisplayConfig {
+function withToolOverride(
+	config: ToolDisplayConfig,
+	toolName: BuiltInToolOverrideName,
+	enabled: boolean,
+): ToolDisplayConfig {
 	const registerToolOverrides: ToolDisplayConfig["registerToolOverrides"] = {
 		...config.registerToolOverrides,
 		[toolName]: enabled,
@@ -240,6 +294,11 @@ function applySetting(config: ToolDisplayConfig, id: string, value: string): Too
 			const parsed = parseToolDisplayPreset(value);
 			return parsed ? applyPreset(parsed) : config;
 		}
+		case "enableNativeUserMessageBox":
+			return {
+				...config,
+				enableNativeUserMessageBox: value === "on",
+			};
 		case "readOutputMode":
 			return {
 				...config,
@@ -310,14 +369,21 @@ function applySetting(config: ToolDisplayConfig, id: string, value: string): Too
 	}
 }
 
-function syncSettingValues(settingsList: SettingValueSyncTarget, config: ToolDisplayConfig): void {
+function syncSettingValues(
+	settingsList: SettingValueSyncTarget,
+	config: ToolDisplayConfig,
+	capabilities: ToolDisplayCapabilities,
+): void {
 	settingsList.updateValue("preset", detectToolDisplayPreset(config));
+	settingsList.updateValue("enableNativeUserMessageBox", toOnOff(config.enableNativeUserMessageBox));
 	for (const toolName of BUILT_IN_TOOL_OVERRIDE_NAMES) {
 		settingsList.updateValue(TOOL_OVERRIDE_SETTING_IDS[toolName], toOnOff(config.registerToolOverrides[toolName]));
 	}
 	settingsList.updateValue("readOutputMode", config.readOutputMode);
 	settingsList.updateValue("searchOutputMode", config.searchOutputMode);
-	settingsList.updateValue("mcpOutputMode", config.mcpOutputMode);
+	if (capabilities.hasMcpTooling) {
+		settingsList.updateValue("mcpOutputMode", config.mcpOutputMode);
+	}
 	settingsList.updateValue("previewLines", String(config.previewLines));
 	settingsList.updateValue("expandedPreviewMaxLines", String(config.expandedPreviewMaxLines));
 	settingsList.updateValue("bashCollapsedLines", String(config.bashCollapsedLines));
@@ -326,11 +392,14 @@ function syncSettingValues(settingsList: SettingValueSyncTarget, config: ToolDis
 	settingsList.updateValue("diffCollapsedLines", String(config.diffCollapsedLines));
 	settingsList.updateValue("diffWordWrap", toOnOff(config.diffWordWrap));
 	settingsList.updateValue("showTruncationHints", toOnOff(config.showTruncationHints));
-	settingsList.updateValue("showRtkCompactionHints", toOnOff(config.showRtkCompactionHints));
+	if (capabilities.hasRtkOptimizer) {
+		settingsList.updateValue("showRtkCompactionHints", toOnOff(config.showRtkCompactionHints));
+	}
 }
 
 async function openSettingsModal(ctx: ExtensionCommandContext, controller: ToolDisplayConfigController): Promise<void> {
 	const overlayOptions = { anchor: "center" as const, width: 76, maxHeight: "80%" as const, margin: 1 };
+	const capabilities = controller.getCapabilities();
 
 	await ctx.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
@@ -341,13 +410,13 @@ async function openSettingsModal(ctx: ExtensionCommandContext, controller: ToolD
 				{
 					title: "Tool Display Settings",
 					description: "OpenCode-style tool output behavior for pi",
-					settings: buildSettingItems(current),
+					settings: buildSettingItems(current, capabilities),
 					onChange: (id, newValue) => {
 						current = applySetting(current, id, newValue);
 						controller.setConfig(current, ctx);
 						current = controller.getConfig();
 						if (settingsModal) {
-							syncSettingValues(settingsModal, current);
+							syncSettingValues(settingsModal, current, capabilities);
 						}
 					},
 					onClose: () => done(),
@@ -400,7 +469,10 @@ function handleToolDisplayArgs(args: string, ctx: ExtensionCommandContext, contr
 	const normalized = raw.toLowerCase();
 
 	if (normalized === "show") {
-		ctx.ui.notify(`tool-display: ${summarizeConfig(controller.getConfig())}`, "info");
+		ctx.ui.notify(
+			`tool-display: ${summarizeConfig(controller.getConfig(), controller.getCapabilities())}`,
+			"info",
+		);
 		return true;
 	}
 

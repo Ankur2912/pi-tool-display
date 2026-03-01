@@ -32,6 +32,7 @@ export interface ToolOverrideOwnership {
 
 export interface ToolDisplayConfig {
 	registerToolOverrides: ToolOverrideOwnership;
+	enableNativeUserMessageBox: boolean;
 	readOutputMode: ReadOutputMode;
 	searchOutputMode: SearchOutputMode;
 	mcpOutputMode: McpOutputMode;
@@ -56,6 +57,7 @@ export const DEFAULT_TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
 		edit: true,
 		write: true,
 	},
+	enableNativeUserMessageBox: true,
 	readOutputMode: "hidden",
 	searchOutputMode: "hidden",
 	mcpOutputMode: "hidden",

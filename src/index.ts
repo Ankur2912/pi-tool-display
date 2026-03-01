@@ -7,6 +7,11 @@ import {
   normalizeToolDisplayConfig,
   saveToolDisplayConfig,
 } from "./config-store.js";
+import {
+  applyCapabilityConfigGuards,
+  detectToolDisplayCapabilities,
+  type ToolDisplayCapabilities,
+} from "./capabilities.js";
 import { registerToolDisplayCommand } from "./config-modal.js";
 import { registerToolDisplayOverrides } from "./tool-overrides.js";
 import registerNativeUserMessageBox from "./user-message-box-native.js";
@@ -15,23 +20,41 @@ import {
   type ToolDisplayConfig,
 } from "./types.js";
 
+function ownershipChanged(
+  previous: ToolDisplayConfig,
+  next: ToolDisplayConfig,
+): boolean {
+  return BUILT_IN_TOOL_OVERRIDE_NAMES.some(
+    (toolName) =>
+      previous.registerToolOverrides[toolName] !==
+      next.registerToolOverrides[toolName],
+  );
+}
+
 export default function toolDisplayExtension(pi: ExtensionAPI): void {
   const initial = loadToolDisplayConfig();
   let config: ToolDisplayConfig = initial.config;
   let pendingLoadError = initial.error;
+  let capabilities: ToolDisplayCapabilities = {
+    hasMcpTooling: false,
+    hasRtkOptimizer: false,
+  };
+
+  const refreshCapabilities = (): void => {
+    capabilities = detectToolDisplayCapabilities(pi, process.cwd());
+  };
 
   const getConfig = (): ToolDisplayConfig => config;
+  const getCapabilities = (): ToolDisplayCapabilities => capabilities;
+  const getEffectiveConfig = (): ToolDisplayConfig =>
+    applyCapabilityConfigGuards(config, capabilities);
 
   const setConfig = (
     next: ToolDisplayConfig,
     ctx: ExtensionCommandContext,
   ): void => {
     const normalized = normalizeToolDisplayConfig(next);
-    const requiresReload = BUILT_IN_TOOL_OVERRIDE_NAMES.some(
-      (toolName) =>
-        config.registerToolOverrides[toolName] !==
-        normalized.registerToolOverrides[toolName],
-    );
+    const requiresReload = ownershipChanged(config, normalized);
     config = normalized;
 
     const saved = saveToolDisplayConfig(normalized);
@@ -47,14 +70,19 @@ export default function toolDisplayExtension(pi: ExtensionAPI): void {
     }
   };
 
-  registerToolDisplayOverrides(pi, getConfig);
-  registerNativeUserMessageBox(pi);
-  registerToolDisplayCommand(pi, { getConfig, setConfig });
+  registerToolDisplayOverrides(pi, getEffectiveConfig);
+  registerNativeUserMessageBox(pi, getConfig);
+  registerToolDisplayCommand(pi, { getConfig, setConfig, getCapabilities });
 
   pi.on("session_start", async (_event, ctx) => {
+    refreshCapabilities();
     if (pendingLoadError) {
       ctx.ui.notify(pendingLoadError, "warning");
       pendingLoadError = undefined;
     }
+  });
+
+  pi.on("before_agent_start", async () => {
+    refreshCapabilities();
   });
 }

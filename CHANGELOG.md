@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-03-13
+
+### Added
+- Write overwrite diff guard to skip expensive diff computation for large files (4000+ lines or 1M+ cells)
+- Cached user message markdown renderer to avoid rebuilding markdown for large content on every render
+- Configurable limits for user message markdown (100K characters, 2000 lines)
+
+### Changed
+- Improved performance for large write operations by using approximate stats instead of computing full diff
+- User message markdown now bypasses rebuild for extremely large content (>100K chars or >2000 lines)
+- Optimized write diff rendering to defer detailed data computation until actually needed
+
+### Fixed
+- Prevented UI slowdown on very large file writes by showing guard message instead of computing expensive diffs
+- Avoided redundant markdown parser instantiation for repeated renders of the same user message
+
 ## [0.1.8] - 2026-03-12
 
 ### Changed

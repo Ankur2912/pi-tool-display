@@ -9,7 +9,10 @@ import {
   patchUserMessageRenderPrototype,
   type PatchableUserMessagePrototype,
 } from "./user-message-box-patch.js";
-import { extractUserMessageMarkdownState } from "./user-message-box-markdown.js";
+import {
+  extractUserMessageMarkdownState,
+  type UserMessageMarkdownState,
+} from "./user-message-box-markdown.js";
 
 export type { PatchableUserMessagePrototype } from "./user-message-box-patch.js";
 import {
@@ -25,10 +28,21 @@ export interface UserMessageTheme extends UserMessageBackgroundTheme {
   bold?(text: string): string;
 }
 
+interface CachedUserMessageMarkdownRenderer {
+  text: string;
+  theme: unknown;
+  defaultTextStyle?: Record<string, unknown>;
+  renderer: { render(width: number): string[] };
+  renderedWidth: number;
+  renderedLines: string[];
+}
+
 const MIN_BORDER_WIDTH = 8;
 const TITLE_TEXT = " user ";
 const CONTENT_HORIZONTAL_PADDING_COLUMNS = 1;
 const USER_MESSAGE_PATCH_VERSION = 5;
+const MAX_USER_MESSAGE_MARKDOWN_TEXT_LENGTH = 100_000;
+const MAX_USER_MESSAGE_MARKDOWN_LINE_COUNT = 2_000;
 
 function colorBorder(theme: UserMessageTheme | undefined, text: string): string {
   if (!text || !theme) {
@@ -106,27 +120,146 @@ function wrapContentLine(
   return colorUserBackground(theme, row);
 }
 
+function createMarkdownRenderer(
+  markdownState: UserMessageMarkdownState,
+): { render(width: number): string[] } {
+  return new Markdown(
+    markdownState.text,
+    0,
+    0,
+    markdownState.theme as MarkdownTheme,
+    markdownState.defaultTextStyle as DefaultTextStyle | undefined,
+  );
+}
+
+function countUserMessageLines(text: string, maxLines: number): number {
+  let lineCount = 1;
+  for (const character of text) {
+    if (character !== "\n") {
+      continue;
+    }
+
+    lineCount++;
+    if (lineCount > maxLines) {
+      return lineCount;
+    }
+  }
+
+  return lineCount;
+}
+
+function hasSameDefaultTextStyle(
+  left: Record<string, unknown> | undefined,
+  right: Record<string, unknown> | undefined,
+): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return left === right;
+  }
+
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  for (const key of leftKeys) {
+    if (left[key] !== right[key]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function hasSameMarkdownState(
+  cached: CachedUserMessageMarkdownRenderer,
+  state: UserMessageMarkdownState,
+): boolean {
+  return cached.text === state.text
+    && cached.theme === state.theme
+    && hasSameDefaultTextStyle(cached.defaultTextStyle, state.defaultTextStyle);
+}
+
+export function shouldBypassUserMessageMarkdownRebuild(
+  markdownState: UserMessageMarkdownState,
+): boolean {
+  if (markdownState.text.length > MAX_USER_MESSAGE_MARKDOWN_TEXT_LENGTH) {
+    return true;
+  }
+
+  return countUserMessageLines(
+    markdownState.text,
+    MAX_USER_MESSAGE_MARKDOWN_LINE_COUNT,
+  ) > MAX_USER_MESSAGE_MARKDOWN_LINE_COUNT;
+}
+
+export function createUserMessageMarkdownLineRenderer(
+  buildRenderer: (
+    markdownState: UserMessageMarkdownState,
+  ) => { render(width: number): string[] } = createMarkdownRenderer,
+): (
+  instance: object,
+  markdownState: UserMessageMarkdownState,
+  width: number,
+) => string[] {
+  const cache = new WeakMap<object, CachedUserMessageMarkdownRenderer>();
+
+  return (instance, markdownState, width) => {
+    const cached = cache.get(instance);
+    const canReuseRenderer = cached
+      ? hasSameMarkdownState(cached, markdownState)
+      : false;
+
+    if (canReuseRenderer && cached?.renderedWidth === width) {
+      return cached.renderedLines;
+    }
+
+    const renderer = canReuseRenderer && cached
+      ? cached.renderer
+      : buildRenderer(markdownState);
+    const renderedLines = renderer.render(width);
+
+    cache.set(instance, {
+      text: markdownState.text,
+      theme: markdownState.theme,
+      defaultTextStyle: markdownState.defaultTextStyle,
+      renderer,
+      renderedWidth: width,
+      renderedLines,
+    });
+
+    return renderedLines;
+  };
+}
+
+const renderCachedUserMessageMarkdownLines =
+  createUserMessageMarkdownLineRenderer();
+
 function renderUserMessageBodyLines(
   instance: unknown,
   innerWidth: number,
   originalRender: (width: number) => string[],
 ): string[] {
+  if (typeof instance !== "object" || instance === null) {
+    return originalRender.call(instance, innerWidth);
+  }
+
   const markdownState = extractUserMessageMarkdownState(
     instance as { children?: unknown[] },
   );
-  if (!markdownState) {
+  if (!markdownState || shouldBypassUserMessageMarkdownRebuild(markdownState)) {
     return originalRender.call(instance, innerWidth);
   }
 
   try {
-    const markdown = new Markdown(
-      markdownState.text,
-      0,
-      0,
-      markdownState.theme as MarkdownTheme,
-      markdownState.defaultTextStyle as DefaultTextStyle | undefined,
+    return renderCachedUserMessageMarkdownLines(
+      instance,
+      markdownState,
+      innerWidth,
     );
-    return markdown.render(innerWidth);
   } catch {
     return originalRender.call(instance, innerWidth);
   }

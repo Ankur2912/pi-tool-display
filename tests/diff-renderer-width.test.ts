@@ -81,3 +81,24 @@ test("write diff renderer respects parent box width across narrow layouts", () =
 		assert.ok(lines.some((line) => visibleWidth(line) > 0));
 	}
 });
+
+test("write overwrite diff renderer falls back when the overwrite matrix would be too large", () => {
+	const previousContent = `${Array.from({ length: 1100 }, (_, index) => `old-${index}`).join("\n")}\n`;
+	const nextContent = `${Array.from({ length: 1100 }, (_, index) => `new-${index}`).join("\n")}\n`;
+	const component = renderWriteDiffResult(
+		nextContent,
+		{
+			expanded: false,
+			filePath: "demo.txt",
+			fileExistedBeforeWrite: true,
+			previousContent,
+		},
+		diffConfig as any,
+		theme,
+		"",
+	);
+
+	const lines = renderInsideToolBox(component, 80);
+	assertLinesFitWidth(lines, 80);
+	assert.match(lines.join("\n"), /overwrite diff omitted/i);
+});

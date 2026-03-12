@@ -9,6 +9,10 @@ import {
   extractUserMessageMarkdownState,
 } from "../src/user-message-box-markdown.ts";
 import {
+  createUserMessageMarkdownLineRenderer,
+  shouldBypassUserMessageMarkdownRebuild,
+} from "../src/user-message-box-renderer.ts";
+import {
   patchUserMessageRenderPrototype,
   type PatchableUserMessagePrototype,
 } from "../src/user-message-box-patch.ts";
@@ -107,6 +111,65 @@ test("user message markdown extraction removes nested background styling", () =>
   assert.equal(extracted?.defaultTextStyle?.color, color);
   assert.equal(extracted?.defaultTextStyle?.bold, true);
   assert.equal("bgColor" in (extracted?.defaultTextStyle ?? {}), false);
+});
+
+test("user message markdown renderer reuses cached markdown renders for identical state", () => {
+  let rendererCreationCount = 0;
+  let renderCallCount = 0;
+  const renderMarkdown = createUserMessageMarkdownLineRenderer((state) => {
+    rendererCreationCount++;
+    return {
+      render(width: number): string[] {
+        renderCallCount++;
+        return [`${state.text}:${width}`];
+      },
+    };
+  });
+
+  const instance = {};
+  const theme = { heading: () => "" };
+
+  assert.deepEqual(
+    renderMarkdown(instance, { text: "cached", theme, defaultTextStyle: { bold: true } }, 24),
+    ["cached:24"],
+  );
+  assert.deepEqual(
+    renderMarkdown(instance, { text: "cached", theme, defaultTextStyle: { bold: true } }, 24),
+    ["cached:24"],
+  );
+  assert.equal(rendererCreationCount, 1);
+  assert.equal(renderCallCount, 1);
+
+  assert.deepEqual(
+    renderMarkdown(instance, { text: "cached", theme, defaultTextStyle: { bold: true } }, 48),
+    ["cached:48"],
+  );
+  assert.equal(rendererCreationCount, 1);
+  assert.equal(renderCallCount, 2);
+
+  assert.deepEqual(
+    renderMarkdown(instance, { text: "updated", theme, defaultTextStyle: { bold: true } }, 48),
+    ["updated:48"],
+  );
+  assert.equal(rendererCreationCount, 2);
+  assert.equal(renderCallCount, 3);
+});
+
+test("user message markdown rebuild guard bypasses oversized payloads", () => {
+  assert.equal(
+    shouldBypassUserMessageMarkdownRebuild({
+      text: "short message",
+      theme: {},
+    }),
+    false,
+  );
+  assert.equal(
+    shouldBypassUserMessageMarkdownRebuild({
+      text: `${"line\n".repeat(2000)}tail`,
+      theme: {},
+    }),
+    true,
+  );
 });
 
 test("user message renderer adds one top and bottom padding row inside the box", () => {

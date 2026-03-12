@@ -1978,6 +1978,111 @@ function buildWriteOverwriteEntries(oldLines: string[], newLines: string[]): Par
 	return entries;
 }
 
+interface WriteDiffData {
+	entries: ParsedDiffEntry[];
+	splitRows: SplitDiffRow[];
+	inlineHighlights: WeakMap<DiffLineEntry, DiffSpan[]>;
+	lineNumberWidth: number;
+	stats: DiffStats;
+	hunkCount: number;
+}
+
+interface WriteOverwriteGuard {
+	previousLineCount: number;
+	nextLineCount: number;
+}
+
+const MAX_WRITE_OVERWRITE_DIFF_LINES = 4000;
+const MAX_WRITE_OVERWRITE_DIFF_MATRIX_CELLS = 1_000_000;
+
+function buildApproximateWriteStats(
+	lineCount: number,
+	previousLineCount: number,
+	hasComparablePrevious: boolean,
+): DiffStats {
+	const removed = hasComparablePrevious ? previousLineCount : 0;
+	const added = lineCount;
+	const hasContent = lineCount > 0 || removed > 0;
+	return {
+		added,
+		removed,
+		context: 0,
+		hunks: hasContent ? 1 : 0,
+		files: 1,
+		lines: added + removed,
+	};
+}
+
+function buildWriteDiffData(entries: ParsedDiffEntry[]): WriteDiffData {
+	const splitRows = buildSplitRows(entries);
+	const inlineHighlights = buildInlineHighlightMap(splitRows);
+	const lineNumberWidth = getLineNumberWidth(entries);
+	const hunkCount = entries.length > 0 ? 1 : 0;
+	const stats = collectDiffStats(entries, hunkCount, 1);
+	return {
+		entries,
+		splitRows,
+		inlineHighlights,
+		lineNumberWidth,
+		stats,
+		hunkCount,
+	};
+}
+
+function resolveWriteOverwriteGuard(
+	previousLines: string[],
+	nextLines: string[],
+): WriteOverwriteGuard | undefined {
+	const previousLineCount = previousLines.length;
+	const nextLineCount = nextLines.length;
+	if (previousLineCount > MAX_WRITE_OVERWRITE_DIFF_LINES || nextLineCount > MAX_WRITE_OVERWRITE_DIFF_LINES) {
+		return { previousLineCount, nextLineCount };
+	}
+	if (previousLineCount === 0 || nextLineCount === 0) {
+		return undefined;
+	}
+	return previousLineCount * nextLineCount > MAX_WRITE_OVERWRITE_DIFF_MATRIX_CELLS
+		? { previousLineCount, nextLineCount }
+		: undefined;
+}
+
+function buildWriteOverwriteGuardText(guard: WriteOverwriteGuard, width: number): string {
+	const safeWidth = normalizeDiffRenderWidth(width);
+	if (safeWidth === 0) {
+		return "";
+	}
+
+	const candidates = [
+		`↳ overwrite diff omitted (${guard.previousLineCount} → ${guard.nextLineCount} lines)`,
+		`↳ overwrite diff omitted (${guard.previousLineCount}→${guard.nextLineCount})`,
+		"↳ overwrite diff omitted",
+		"diff omitted",
+		"…",
+	];
+	for (const candidate of candidates) {
+		if (visibleWidth(candidate) <= safeWidth) {
+			return candidate;
+		}
+	}
+	return truncateToWidth(candidates[candidates.length - 1] ?? "", safeWidth, "");
+}
+
+function renderWriteOverwriteGuardRows(
+	guard: WriteOverwriteGuard,
+	width: number,
+	theme: DiffTheme,
+): string[] {
+	if (width <= 0) {
+		return [""];
+	}
+	return [
+		clampDiffLineToWidth(
+			stabilizeBackgroundResets(theme.fg("warning", buildWriteOverwriteGuardText(guard, width))),
+			width,
+		),
+	];
+}
+
 export function renderWriteDiffResult(
 	content: string | undefined,
 	options: DiffRenderOptions,
@@ -1998,24 +2103,36 @@ export function renderWriteDiffResult(
 		? splitWriteContentLines(options.previousContent)
 		: [];
 	const hasComparablePrevious = options.fileExistedBeforeWrite === true && typeof options.previousContent === "string";
-	const entries = hasComparablePrevious
-		? buildWriteOverwriteEntries(previousLines, lines)
-		: buildWriteEntries(lines);
-	const splitRows = buildSplitRows(entries);
-	const inlineHighlights = buildInlineHighlightMap(splitRows);
-	const lineNumberWidth = getLineNumberWidth(entries);
+	const approximateStats = buildApproximateWriteStats(
+		lines.length,
+		previousLines.length,
+		hasComparablePrevious,
+	);
+	const overwriteGuard = hasComparablePrevious
+		? resolveWriteOverwriteGuard(previousLines, lines)
+		: undefined;
 	const palette = resolveDiffPalette(theme);
 	const containerBgAnsi = resolveContainerBackgroundAnsi(theme);
 	const language = resolveLanguageFromPath(filePath);
 	const highlightLine = createCodeLineHighlighter(language);
 	const wordWrap = config.diffWordWrap;
-	const hunkCount = entries.length > 0 ? 1 : 0;
-	const stats = collectDiffStats(entries, hunkCount, 1);
 
+	let detailedData: WriteDiffData | undefined;
 	let cachedWidth: number | undefined;
 	let cachedExpanded: boolean | undefined;
 	let cachedMode: DiffPresentationMode | undefined;
 	let cachedLines: string[] | undefined;
+
+	function getDetailedData(): WriteDiffData {
+		if (detailedData) {
+			return detailedData;
+		}
+		const entries = hasComparablePrevious
+			? buildWriteOverwriteEntries(previousLines, lines)
+			: buildWriteEntries(lines);
+		detailedData = buildWriteDiffData(entries);
+		return detailedData;
+	}
 
 	return {
 		render(width: number): string[] {
@@ -2040,10 +2157,21 @@ export function renderWriteDiffResult(
 				safeWidth,
 				theme,
 			);
+			if (overwriteGuard) {
+				cachedLines = clampDiffLinesToWidth(
+					[header, ...renderWriteOverwriteGuardRows(overwriteGuard, safeWidth, theme)],
+					safeWidth,
+				);
+				cachedWidth = safeWidth;
+				cachedExpanded = options.expanded;
+				cachedMode = mode;
+				return cachedLines;
+			}
+
 			if (mode === "summary") {
-				const summaryRows = entries.length === 0
+				const summaryRows = approximateStats.lines === 0
 					? [header]
-					: [header, ...renderSummaryRows(stats, safeWidth, theme)];
+					: [header, ...renderSummaryRows(approximateStats, safeWidth, theme)];
 				cachedLines = clampDiffLinesToWidth(summaryRows, safeWidth);
 				cachedWidth = safeWidth;
 				cachedExpanded = options.expanded;
@@ -2051,15 +2179,16 @@ export function renderWriteDiffResult(
 				return cachedLines;
 			}
 
-			const bodyRows: RenderedRow[] = entries.length === 0
+			const data = getDetailedData();
+			const bodyRows: RenderedRow[] = data.entries.length === 0
 				? [{ text: theme.fg("muted", "(empty file)"), hunkIndex: null }]
 				: mode === "split"
 					? renderSplit(
-						splitRows,
+						data.splitRows,
 						safeWidth,
 						theme,
-						lineNumberWidth,
-						inlineHighlights,
+						data.lineNumberWidth,
+						data.inlineHighlights,
 						palette,
 						highlightLine,
 						containerBgAnsi,
@@ -2067,21 +2196,21 @@ export function renderWriteDiffResult(
 					)
 					: mode === "compact"
 						? renderCompact(
-							entries,
+							data.entries,
 							safeWidth,
 							theme,
-							inlineHighlights,
+							data.inlineHighlights,
 							palette,
 							highlightLine,
 							containerBgAnsi,
 							wordWrap,
 						)
 						: renderUnified(
-							entries,
+							data.entries,
 							safeWidth,
 							theme,
-							lineNumberWidth,
-							inlineHighlights,
+							data.lineNumberWidth,
+							data.inlineHighlights,
 							palette,
 							highlightLine,
 							containerBgAnsi,
@@ -2093,7 +2222,7 @@ export function renderWriteDiffResult(
 				safeWidth,
 				options.expanded,
 				config.diffCollapsedLines,
-				hunkCount,
+				data.hunkCount,
 				theme,
 			);
 			const frame = renderDiffFrameLine(safeWidth, theme);

